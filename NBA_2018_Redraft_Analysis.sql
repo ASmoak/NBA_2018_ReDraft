@@ -1,101 +1,125 @@
 -- NBA 2018 Redraft Statistical Analysis
 -- SQL Server Management Studio 2020 Compatible
 
--- 1. Create Temporary Table for Calculations
-SELECT 
-    ID,
-    Player,
-    Debut,
-    Age,
-    Yrs,
-    Draft_Position,
-    Team,
-    Draft_Status,
-    G,
-    MP,
-    FG,
-    FGA,
-    3P,
-    3PA,
-    FT,
-    FTA,
-    ORB,
-    TRB,
-    AST,
-    STL,
-    BLK,
-    TOV,
-    PF,
-    PTS,
-    FG_PCT,
-    3P_PCT,
-    FT_PCT,
-    MP_Avg_Per_Gm,
-    PTS_Avg_Per_Gm,
-    TRB_Avg_Per_Gm,
-    AST_Avg_Per_Gm,
-    STL_Avg_Per_Gm,
-    BLK_Avg_Per_Gm,
-    
-    -- Calculate Individual Impact Scores (weighted by career totals)
-    ((CAST(PTS AS FLOAT) * 0.35) + 
-     (CAST(TRB AS FLOAT) * 0.20) + 
-     (CAST(AST AS FLOAT) * 0.20) + 
-     (CAST(STL AS FLOAT) * 0.10) + 
-     (CAST(BLK AS FLOAT) * 0.10) + 
-     (CAST(3P AS FLOAT) * 0.05)) * 
-     (1 - (CAST(TOV AS FLOAT) / CAST(G AS FLOAT) * 0.1)) AS Career_Impact_Score
+-- Using CTEs for better readability and performance
+WITH PlayerStats AS (
+    -- Base player statistics with Impact Score calculation
+    SELECT 
+        ID,
+        Player,
+        Debut,
+        Age,
+        Yrs,
+        Draft_Position,
+        Team,
+        Draft_Status,
+        G,
+        MP,
+        FG,
+        FGA,
+        3P,
+        3PA,
+        FT,
+        FTA,
+        ORB,
+        TRB,
+        AST,
+        STL,
+        BLK,
+        TOV,
+        PF,
+        PTS,
+        FG_PCT,
+        [3P_PCT],
+        FT_PCT,
+        MP_Avg_Per_Gm,
+        PTS_Avg_Per_Gm,
+        TRB_Avg_Per_Gm,
+        AST_Avg_Per_Gm,
+        STL_Avg_Per_Gm,
+        BLK_Avg_Per_Gm,
+        
+        -- Calculate Career Impact Score with new formula
+        (
+            (PTS * 1.0) + 
+            (TRB * 1.2) + 
+            (AST * 1.5) + 
+            (STL * 3.0) + 
+            (BLK * 3.0) - 
+            (TOV * 1.0) +  -- Penalty for turnovers
+            (FG_PCT * 100) + 
+            (FT_PCT * 50) + 
+            ([3P_PCT] * 100)
+        ) * 
+        -- Games played multiplier (G/500)
+        (CAST(G AS FLOAT) / 500.0) AS Career_Impact_Score,
+        
+    FROM [dbo].[Revised_2018_NBA_Draft]
+    WHERE G > 0 -- Only consider players who have played in the NBA
+),
 
-INTO #TempPlayerStats
-FROM [dbo].[Revised_2018_NBA_Draft]
-WHERE G > 0 -- Only consider players who have played in the NBA
+NormalizedStats AS (
+    -- Calculate normalized scores, add Redraft Position, and Value Status
+    SELECT 
+        ID,
+        Player,
+        Debut,
+        Age,
+        Yrs,
+        Draft_Position,
+        Team,
+        Draft_Status,
+        G,
+        MP,
+        FG,
+        FGA,
+        3P,
+        3PA,
+        FT,
+        FTA,
+        ORB,
+        TRB,
+        AST,
+        STL,
+        BLK,
+        TOV,
+        PF,
+        PTS,
+        FG_PCT,
+        [3P_PCT],
+        FT_PCT,
+        MP_Avg_Per_Gm,
+        PTS_Avg_Per_Gm,
+        TRB_Avg_Per_Gm,
+        AST_Avg_Per_Gm,
+        STL_Avg_Per_Gm,
+        BLK_Avg_Per_Gm,
+        Career_Impact_Score,
+        
+        -- Calculate normalized score (1-100 scale)
+        CAST(((Career_Impact_Score - MIN(Career_Impact_Score) OVER()) / 
+              (MAX(Career_Impact_Score) OVER() - MIN(Career_Impact_Score) OVER())) * 100 AS DECIMAL(5,2)) AS Normalized_Impact_Score,
+        
+        -- Calculate Redraft Position
+        ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) AS Redraft_Position,
+        
+        -- Calculate Value Status based on Draft vs Redraft position
+        CASE 
+            WHEN Draft_Position = 0 AND Redraft_Position <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
+            WHEN Draft_Position = 0 AND Redraft_Position <= 60 THEN 'UNDRAFTED STEAL'
+            WHEN Draft_Position > 20 AND Redraft_Position <= 10 THEN 'HUGE STEAL'
+            WHEN Draft_Position > 30 AND Redraft_Position <= 15 THEN 'STEAL'
+            WHEN Draft_Position BETWEEN 1 AND 10 AND Redraft_Position > 30 THEN 'MAJOR BUST'
+            WHEN Draft_Position BETWEEN 1 AND 5 AND Redraft_Position > 20 THEN 'BUST'
+            ELSE 'Expected Value'
+        END AS Value_Status
+    FROM PlayerStats
+)
 
--- 2. Calculate Normalized Impact Scores (1-100 scale)
-SELECT 
-    ID,
-    Player,
-    Debut,
-    Age,
-    Yrs,
-    Draft_Position,
-    Team,
-    Draft_Status,
-    G,
-    MP,
-    FG,
-    FGA,
-    3P,
-    3PA,
-    FT,
-    FTA,
-    ORB,
-    TRB,
-    AST,
-    STL,
-    BLK,
-    TOV,
-    PF,
-    PTS,
-    FG_PCT,
-    3P_PCT,
-    FT_PCT,
-    MP_Avg_Per_Gm,
-    PTS_Avg_Per_Gm,
-    TRB_Avg_Per_Gm,
-    AST_Avg_Per_Gm,
-    STL_Avg_Per_Gm,
-    BLK_Avg_Per_Gm,
-    Career_Impact_Score,
-    
-    -- Calculate normalized score (1-100 scale)
-    CAST(((Career_Impact_Score - MIN(Career_Impact_Score) OVER()) / 
-          (MAX(Career_Impact_Score) OVER() - MIN(Career_Impact_Score) OVER())) * 100 AS DECIMAL(5,2)) AS Normalized_Impact_Score
-INTO #FinalPlayerStats
-FROM #TempPlayerStats
 
--- 3. Redrafted Order Based on Career Impact
+-- Main Redrafted Order Query
 SELECT 
-    ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) AS Redraft_Position,
+    Redraft_Position,
     Player,
     Draft_Position,
     Draft_Status,
@@ -107,11 +131,41 @@ SELECT
     TRB,
     AST,
     STL,
-    BLK
-FROM #FinalPlayerStats
-ORDER BY Career_Impact_Score DESC
+    BLK,
+    FG_PCT,
+    [3P_PCT],
+    FT_PCT,
+    MP_Avg_Per_Gm,
+    PTS_Avg_Per_Gm,
+    TRB_Avg_Per_Gm,
+    AST_Avg_Per_Gm,
+    STL_Avg_Per_Gm,
+    BLK_Avg_Per_Gm,
+    
+    -- Calculate Position Change
+    CASE 
+        WHEN Draft_Position = 0 THEN 'Undrafted -> Pick ' + CAST(Redraft_Position as VARCHAR(3))
+        ELSE 'Pick ' + CAST(Draft_Position as VARCHAR(3)) + ' -> Pick ' + CAST(Redraft_Position as VARCHAR(3))
+    END AS Position_Change,
 
--- 4. Best Undrafted Free Agents
+    -- Calculate Value Status based on Draft vs Redraft position
+    CASE 
+        WHEN Draft_Position = 0 AND Redraft_Position <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
+        WHEN Draft_Position = 0 AND Redraft_Position <= 60 THEN 'UNDRAFTED STEAL'
+        WHEN Draft_Position > 20 AND Redraft_Position <= 10 THEN 'HUGE STEAL'
+        WHEN Draft_Position > 30 AND Redraft_Position <= 15 THEN 'STEAL'
+        WHEN Draft_Position BETWEEN 1 AND 10 AND Redraft_Position > 30 THEN 'MAJOR BUST'
+        WHEN Draft_Position BETWEEN 1 AND 5 AND Redraft_Position > 20 THEN 'BUST'
+        ELSE 'Expected Value'
+    END AS Value_Status
+
+FROM NormalizedStats
+ORDER BY Redraft_Position
+OFFSET 5 ROWS FETCH FIRST 100 ROWS ONLY
+
+
+
+-- Best Undrafted Free Agents
 SELECT TOP 10
     Player,
     Team,
@@ -122,12 +176,17 @@ SELECT TOP 10
     TRB,
     AST,
     STL,
-    BLK
-FROM #FinalPlayerStats
+    BLK,
+	FG_PCT,
+    [3P_PCT],
+    FT_PCT,
+FROM NormalizedStats
 WHERE Draft_Status = 'Undrafted'
 ORDER BY Career_Impact_Score DESC
 
--- 5. Team Performance Analysis
+
+
+-- Team Performance Analysis with Value Status counts and top scorer details
 SELECT 
     Team,
     COUNT(CASE WHEN Draft_Status = 'Drafted' THEN 1 END) AS Drafted_Players,
@@ -136,12 +195,28 @@ SELECT
     AVG(Career_Impact_Score) AS Avg_Impact,
     MAX(Career_Impact_Score) AS Best_Pick_Impact,
     MIN(Career_Impact_Score) AS Worst_Pick_Impact,
-    STRING_AGG(Player, ', ') WITHIN GROUP (ORDER BY Career_Impact_Score DESC) AS Players
-FROM #FinalPlayerStats
+    
+    -- Value Status counts
+    COUNT(CASE WHEN Value_Status = 'MASSIVE UNDRAFTED STEAL' THEN 1 END) AS Massive_Undrafted_Steals,
+    COUNT(CASE WHEN Value_Status = 'UNDRAFTED STEAL' THEN 1 END) AS Undrafted_Steals,
+    COUNT(CASE WHEN Value_Status = 'HUGE STEAL' THEN 1 END) AS Huge_Steals,
+    COUNT(CASE WHEN Value_Status = 'STEAL' THEN 1 END) AS Steals,
+    COUNT(CASE WHEN Value_Status = 'MAJOR BUST' THEN 1 END) AS Major_Busts,
+    COUNT(CASE WHEN Value_Status = 'BUST' THEN 1 END) AS Busts,
+    
+    -- Top scorer details (using SELECT TOP 1 for clarity)
+    (SELECT TOP 1 Player FROM NormalizedStats n2 WHERE n2.Team = NormalizedStats.Team ORDER BY Normalized_Impact_Score DESC) AS Top_Scorer,
+    (SELECT TOP 1 Normalized_Impact_Score FROM NormalizedStats n2 WHERE n2.Team = NormalizedStats.Team ORDER BY Normalized_Impact_Score DESC) AS Top_Scorer_Score,
+    (SELECT TOP 1 G FROM NormalizedStats n2 WHERE n2.Team = NormalizedStats.Team ORDER BY Normalized_Impact_Score DESC) AS Top_Scorer_Games
+    
+FROM NormalizedStats
 GROUP BY Team
-ORDER BY Total_Impact DESC
+ORDER BY Avg_Impact DESC
 
--- 6. Draft Efficiency Analysis
+
+
+
+-- Draft Efficiency Analysis
 SELECT 
     Team,
     Draft_Position,
@@ -160,10 +235,6 @@ SELECT
         WHEN Draft_Position = 0 THEN 0 -- Undrafted players
         ELSE CAST(Career_Impact_Score / Draft_Position AS DECIMAL(5,2))
     END AS Draft_Efficiency
-FROM #FinalPlayerStats
+FROM NormalizedStats
 WHERE Draft_Position > 0
 ORDER BY Draft_Efficiency DESC
-
--- Cleanup
-DROP TABLE IF EXISTS #TempPlayerStats
-DROP TABLE IF EXISTS #FinalPlayerStats
