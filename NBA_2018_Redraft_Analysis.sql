@@ -214,27 +214,3 @@ GROUP BY Team
 ORDER BY Avg_Impact DESC
 
 
-
-
--- Draft Efficiency Analysis
-SELECT 
-    Team,
-    Draft_Position,
-    Player,
-    Career_Impact_Score,
-    Normalized_Impact_Score,
-    G,
-    PTS,
-    TRB,
-    AST,
-    STL,
-    BLK,
-    
-    -- Calculate draft efficiency (higher is better)
-    CASE 
-        WHEN Draft_Position = 0 THEN 0 -- Undrafted players
-        ELSE CAST(Career_Impact_Score / Draft_Position AS DECIMAL(5,2))
-    END AS Draft_Efficiency
-FROM NormalizedStats
-WHERE Draft_Position > 0
-ORDER BY Draft_Efficiency DESC
