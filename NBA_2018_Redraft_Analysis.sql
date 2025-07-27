@@ -11,6 +11,7 @@ WITH PlayerStats AS (
         Age,
         Yrs,
         Draft_Position,
+
         Team,
         Draft_Status,
         G,
@@ -52,7 +53,7 @@ WITH PlayerStats AS (
             ([3P_PCT] * 100)
         ) * 
         -- Games played multiplier (G/500)
-        (CAST(G AS FLOAT) / 500.0) AS Career_Impact_Score,
+        (CAST(G AS FLOAT) / 500.0) AS Career_Impact_Score
         
     FROM [dbo].[Revised_2018_NBA_Draft]
     WHERE G > 0 -- Only consider players who have played in the NBA
@@ -67,6 +68,8 @@ NormalizedStats AS (
         Age,
         Yrs,
         Draft_Position,
+        ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) AS Redraft_Position,
+
         Team,
         Draft_Status,
         G,
@@ -100,19 +103,16 @@ NormalizedStats AS (
         CAST(((Career_Impact_Score - MIN(Career_Impact_Score) OVER()) / 
               (MAX(Career_Impact_Score) OVER() - MIN(Career_Impact_Score) OVER())) * 100 AS DECIMAL(5,2)) AS Normalized_Impact_Score,
         
-        -- Calculate Redraft Position
-        ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) AS Redraft_Position,
-        
-        -- Calculate Value Status based on Draft vs Redraft position
-        CASE 
-            WHEN Draft_Position = 0 AND Redraft_Position <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
-            WHEN Draft_Position = 0 AND Redraft_Position <= 60 THEN 'UNDRAFTED STEAL'
-            WHEN Draft_Position > 20 AND Redraft_Position <= 10 THEN 'HUGE STEAL'
-            WHEN Draft_Position > 30 AND Redraft_Position <= 15 THEN 'STEAL'
-            WHEN Draft_Position BETWEEN 1 AND 10 AND Redraft_Position > 30 THEN 'MAJOR BUST'
-            WHEN Draft_Position BETWEEN 1 AND 5 AND Redraft_Position > 20 THEN 'BUST'
-            ELSE 'Expected Value'
-        END AS Value_Status
+		CASE 
+        WHEN Draft_Position = 0 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
+        WHEN Draft_Position = 0 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) <= 60 THEN 'UNDRAFTED STEAL'
+        WHEN Draft_Position > 20 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) <= 10 THEN 'HUGE STEAL'
+        WHEN Draft_Position > 30 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) <= 15 THEN 'STEAL'
+        WHEN Draft_Position BETWEEN 1 AND 10 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) > 30 THEN 'MAJOR BUST'
+        WHEN Draft_Position BETWEEN 1 AND 5 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) > 20 THEN 'BUST'
+        ELSE 'Expected Value'
+    END AS Value_Status
+
     FROM PlayerStats
 )
 
@@ -122,6 +122,23 @@ SELECT
     Redraft_Position,
     Player,
     Draft_Position,
+	    -- Calculate Position Change
+    CASE 
+        WHEN Draft_Position = 0 THEN 'Undrafted -> Pick ' + CAST(Redraft_Position as VARCHAR(3))
+        ELSE 'Pick ' + CAST(Draft_Position as VARCHAR(3)) + ' -> Pick ' + CAST(Redraft_Position as VARCHAR(3))
+    END AS Position_Change,
+
+	 -- Calculate Value Status based on Draft vs Redraft position
+    CASE 
+        WHEN Draft_Position = 0 AND Redraft_Position <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
+        WHEN Draft_Position = 0 AND Redraft_Position <= 60 THEN 'UNDRAFTED STEAL'
+        WHEN Draft_Position > 20 AND Redraft_Position <= 10 THEN 'HUGE STEAL'
+        WHEN Draft_Position > 30 AND Redraft_Position <= 15 THEN 'STEAL'
+        WHEN Draft_Position BETWEEN 1 AND 10 AND Redraft_Position > 30 THEN 'MAJOR BUST'
+        WHEN Draft_Position BETWEEN 1 AND 5 AND Redraft_Position > 20 THEN 'BUST'
+        ELSE 'Expected Value'
+    END AS Value_Status,
+
     Draft_Status,
     Career_Impact_Score,
     Normalized_Impact_Score,
@@ -140,29 +157,11 @@ SELECT
     TRB_Avg_Per_Gm,
     AST_Avg_Per_Gm,
     STL_Avg_Per_Gm,
-    BLK_Avg_Per_Gm,
+    BLK_Avg_Per_Gm
     
-    -- Calculate Position Change
-    CASE 
-        WHEN Draft_Position = 0 THEN 'Undrafted -> Pick ' + CAST(Redraft_Position as VARCHAR(3))
-        ELSE 'Pick ' + CAST(Draft_Position as VARCHAR(3)) + ' -> Pick ' + CAST(Redraft_Position as VARCHAR(3))
-    END AS Position_Change,
-
-    -- Calculate Value Status based on Draft vs Redraft position
-    CASE 
-        WHEN Draft_Position = 0 AND Redraft_Position <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
-        WHEN Draft_Position = 0 AND Redraft_Position <= 60 THEN 'UNDRAFTED STEAL'
-        WHEN Draft_Position > 20 AND Redraft_Position <= 10 THEN 'HUGE STEAL'
-        WHEN Draft_Position > 30 AND Redraft_Position <= 15 THEN 'STEAL'
-        WHEN Draft_Position BETWEEN 1 AND 10 AND Redraft_Position > 30 THEN 'MAJOR BUST'
-        WHEN Draft_Position BETWEEN 1 AND 5 AND Redraft_Position > 20 THEN 'BUST'
-        ELSE 'Expected Value'
-    END AS Value_Status
 
 FROM NormalizedStats
 ORDER BY Redraft_Position
-OFFSET 5 ROWS FETCH FIRST 100 ROWS ONLY
-
 
 
 -- Best Undrafted Free Agents
@@ -179,11 +178,10 @@ SELECT TOP 10
     BLK,
 	FG_PCT,
     [3P_PCT],
-    FT_PCT,
+    FT_PCT
 FROM NormalizedStats
 WHERE Draft_Status = 'Undrafted'
 ORDER BY Career_Impact_Score DESC
-
 
 
 -- Team Performance Analysis with Value Status counts and top scorer details
@@ -212,5 +210,3 @@ SELECT
 FROM NormalizedStats
 GROUP BY Team
 ORDER BY Avg_Impact DESC
-
-
