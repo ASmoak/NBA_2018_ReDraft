@@ -103,6 +103,9 @@ NormalizedStats AS (
         CAST(((Career_Impact_Score - MIN(Career_Impact_Score) OVER()) / 
               (MAX(Career_Impact_Score) OVER() - MIN(Career_Impact_Score) OVER())) * 100 AS DECIMAL(5,2)) AS Normalized_Impact_Score,
         
+        -- Calculate Value Status based on Draft vs Redraft position
+        -- The formula "ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC)" is used to assign a rank to each player based on their Career_Impact_Score in descending order.
+        -- The formula represents the redrafted position of the player in the draft.
 		CASE 
         WHEN Draft_Position = 0 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) <= 30 THEN 'MASSIVE UNDRAFTED STEAL'
         WHEN Draft_Position = 0 AND ROW_NUMBER() OVER (ORDER BY Career_Impact_Score DESC) <= 60 THEN 'UNDRAFTED STEAL'
